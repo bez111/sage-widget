@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Sage activity — vanilla embed</title>
+  <style>
+    body { background: #111; padding: 32px; font-family: system-ui; color: #ccc; }
+    .mount { max-width: 540px; }
+  </style>
+</head>
+<body>
+  <h2>Live Sage activity (vanilla)</h2>
+  <div id="sage" class="mount"></div>
+
+  <script type="module">
+    import { mountSageFeed } from "https://esm.sh/@ergoblockchain/sage-widget/vanilla"
+
+    const handle = mountSageFeed(document.getElementById("sage"), {
+      limit: 5,
+      refreshMs: 60_000,
+      onUpdate: (r) => console.log("[sage] updated", r),
+    })
+
+    // To stop polling and remove DOM:
+    // handle.destroy()
+  </script>
+</body>
+</html>

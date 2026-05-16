@@ -1,0 +1,84 @@
+{
+  "name": "@ergoblockchain/sage-widget",
+  "version": "0.1.0",
+  "description": "Embeddable live-activity feed for Sage — the agent-economy concierge on ergoblockchain.org. React component + vanilla DOM mount + typed event shapes.",
+  "keywords": [
+    "ergo",
+    "ergoblockchain",
+    "sage",
+    "accord-protocol",
+    "agent-economy",
+    "agent-payments",
+    "blockchain-widget",
+    "react"
+  ],
+  "homepage": "https://www.ergoblockchain.org/agent-economy#sage-activity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bez111/sage-widget.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bez111/sage-widget/issues"
+  },
+  "license": "MIT",
+  "author": "Ergo Platform contributors",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./vanilla": {
+      "types": "./dist/vanilla.d.ts",
+      "import": "./dist/vanilla.js",
+      "require": "./dist/vanilla.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run typecheck",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-dom": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
