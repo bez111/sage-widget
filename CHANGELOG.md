@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-16
+
+Prepared paid Sage embed surface.
+
+### Added
+- `SagePaymentWidget` React component for chat, quote, manual Note verification, streaming answer and receipt link.
+- `mountSagePaymentWidget(target, opts)` vanilla DOM mount with the same paid flow.
+- Typed API clients: `fetchSageQuote`, `verifySagePayment`, `fetchSageReceipt`, `streamSageChat`.
+- Payment-flow types: `SageQuote`, `SageChatMessage`, `SageVerifyPaymentResponse`, `SageReceiptBundle`, tenant config and chat stream events.
+
 ## [0.1.0] — 2026-05-16
 
 Initial release. Read-only Sage activity feed.

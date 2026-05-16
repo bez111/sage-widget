@@ -6,7 +6,7 @@
  * Then somewhere in your app:
  */
 
-import { SageActivityFeed } from "@ergoblockchain/sage-widget/react"
+import { SageActivityFeed, SagePaymentWidget } from "@ergoblockchain/sage-widget/react"
 
 export function SiteFooter() {
   return (
@@ -14,6 +14,15 @@ export function SiteFooter() {
       <h3>Live agent payments on Ergo</h3>
       <SageActivityFeed limit={5} refreshMs={60_000} />
     </footer>
+  )
+}
+
+export function PaidSageCard() {
+  return (
+    <section style={{ padding: 24 }}>
+      <h3>Paid Sage embed</h3>
+      <SagePaymentWidget tenant={{ id: "example-react", label: "Example app" }} />
+    </section>
   )
 }
 

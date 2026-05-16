@@ -1,7 +1,7 @@
 {
   "name": "@ergoblockchain/sage-widget",
-  "version": "0.1.0",
-  "description": "Embeddable live-activity feed for Sage — the agent-economy concierge on ergoblockchain.org. React component + vanilla DOM mount + typed event shapes.",
+  "version": "0.2.0",
+  "description": "Embeddable Sage widgets for live activity and paid Accord Note chat on ergoblockchain.org. React components + vanilla DOM mounts + typed API clients.",
   "keywords": [
     "ergo",
     "ergoblockchain",

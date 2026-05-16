@@ -11,9 +11,14 @@
 <body>
   <h2>Live Sage activity (vanilla)</h2>
   <div id="sage" class="mount"></div>
+  <h2>Paid Sage chat (vanilla)</h2>
+  <div id="sage-chat" class="mount"></div>
 
   <script type="module">
-    import { mountSageFeed } from "https://esm.sh/@ergoblockchain/sage-widget/vanilla"
+    import {
+      mountSageFeed,
+      mountSagePaymentWidget,
+    } from "https://esm.sh/@ergoblockchain/sage-widget/vanilla"
 
     const handle = mountSageFeed(document.getElementById("sage"), {
       limit: 5,
@@ -23,6 +28,10 @@
 
     // To stop polling and remove DOM:
     // handle.destroy()
+
+    mountSagePaymentWidget(document.getElementById("sage-chat"), {
+      tenant: { id: "example-vanilla", label: "Vanilla example" },
+    })
   </script>
 </body>
 </html>

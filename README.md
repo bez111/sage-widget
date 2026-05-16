@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@ergoblockchain/sage-widget.svg)](https://www.npmjs.com/package/@ergoblockchain/sage-widget)
 [![license](https://img.shields.io/npm/l/@ergoblockchain/sage-widget.svg)](./LICENSE)
 
-Embeddable live-activity feed for **Sage** — the agent-economy concierge on [ergoblockchain.org](https://www.ergoblockchain.org). Drop a typed React component into your app, or call a vanilla DOM mount function from any framework. Every settled paid query Sage takes appears in the feed within a minute, with a clickable link to the on-chain receipt.
+Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockchain.org](https://www.ergoblockchain.org). Use the read-only activity feed, or embed the paid Sage chat flow with quote, manual Note verification, streaming answer, and receipt link.
 
 > _Why this matters:_ Sage settles real paid AI queries on Ergo testnet. The feed makes the "agent-economy" thesis visibly provable wherever you embed it — not a marketing claim, a list of public on-chain receipts that update live.
 
@@ -21,7 +21,7 @@ yarn add @ergoblockchain/sage-widget
 
 ## Use it
 
-### React
+### React activity feed
 
 ```tsx
 import { SageActivityFeed } from "@ergoblockchain/sage-widget/react"
@@ -33,7 +33,24 @@ export function Footer() {
 
 The component renders into your DOM (no iframe), styles itself with inline styles to avoid host-CSS conflicts, and polls `/api/sage/activity` on the host you point it at.
 
-### Vanilla / non-React
+### React paid chat
+
+```tsx
+import { SagePaymentWidget } from "@ergoblockchain/sage-widget/react"
+
+export function PaidSageBox() {
+  return (
+    <SagePaymentWidget
+      tenant={{ id: "my-site", label: "My Ergo app" }}
+      onReceipt={(receipt) => console.log("Sage receipt", receipt.receiptUrl)}
+    />
+  )
+}
+```
+
+The paid widget calls `/api/sage/quote`, shows the Accord Note payment fields, accepts a `noteBoxId`, calls `/api/sage/verify-payment`, streams `/api/sage/chat`, then surfaces the receipt link from `/api/sage/receipt/<id>`.
+
+### Vanilla / non-React activity feed
 
 ```ts
 import { mountSageFeed } from "@ergoblockchain/sage-widget/vanilla"
@@ -59,6 +76,19 @@ Or use the canonical hosted CDN drop-in (no install needed):
 
 That last form is an iframe variant served straight from ergoblockchain.org — total style isolation, zero install. Use the npm package when you want the markup inline (themable, accessibility-friendly, tree-shakeable).
 
+### Vanilla / non-React paid chat
+
+```ts
+import { mountSagePaymentWidget } from "@ergoblockchain/sage-widget/vanilla"
+
+const handle = mountSagePaymentWidget(document.getElementById("sage-chat")!, {
+  tenant: { id: "docs-footer", label: "Docs footer" },
+})
+
+// You can also start a question programmatically:
+await handle.send("/research explain Ergo Notes")
+```
+
 ## Just the types
 
 If you want to render your own UI over Sage's API and skip the bundled components:
@@ -66,6 +96,9 @@ If you want to render your own UI over Sage's API and skip the bundled component
 ```ts
 import {
   fetchSageActivity,
+  fetchSageQuote,
+  streamSageChat,
+  verifySagePayment,
   type SageActivityEvent,
   type SageActivityResponse,
 } from "@ergoblockchain/sage-widget"
@@ -97,6 +130,17 @@ const settlements = data.events.filter((e) => e.type === "settlement")
 | `style`         | `CSSProperties`                   | —                                         | Inline style merged onto the root container (React only).                                      |
 | `children`      | render-prop                       | —                                         | Pass a function for full UI control; the component will skip the default markup.               |
 
+`SagePaymentWidget` also accepts:
+
+| Prop                | Type                                      | Notes                                                       |
+| ------------------- | ----------------------------------------- | ----------------------------------------------------------- |
+| `tenant`            | `{ id?: string; label?: string; headers?: Record<string,string> }` | Stable embed metadata and optional request headers. |
+| `initialMessages`   | `SageChatMessage[]`                       | Preloaded chat context.                                     |
+| `placeholder`       | `string`                                  | Input placeholder.                                          |
+| `onMessage`         | `(message, messages) => void`             | Fired when the widget appends a chat message.               |
+| `onReceipt`         | `(receipt) => void`                       | Fired after payment verifies and a receipt URL exists.      |
+| `onTier`            | `("free" \| "premium") => void`           | Fired when the stream reports model tier.                   |
+
 ## Event shape
 
 Each event in `response.events` is a typed object:
@@ -125,8 +169,8 @@ For settlements, use `paymentNanoErg` (the value of the consumed Note) for "amou
 
 ## Roadmap
 
-- **v0.1.x** _(current)_ — read-only activity feed (React + vanilla + types).
-- **v0.2** — `<SagePaymentWidget />` full chat with 402 + payment + Sonnet answer.
+- **v0.1.x** — read-only activity feed (React + vanilla + types).
+- **v0.2** _(current source)_ — `<SagePaymentWidget />` paid chat with quote, manual Note verify, streaming answer, receipt link, tenant config.
 - **v0.3** — generic `<AccordActivityFeed providerId="..." />` that works for any provider in the registry, not just Sage.
 
 ## License

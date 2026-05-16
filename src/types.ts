@@ -1,5 +1,5 @@
 /**
- * Public types — mirror of /api/sage/activity response shape.
+ * Public types for the Sage activity feed and paid chat flow.
  *
  * The source of truth is the API at https://www.ergoblockchain.org/api/sage/activity;
  * this file re-states the schema so consumers don't have to depend on the
@@ -72,6 +72,132 @@ export interface SageWidgetOptions {
   /**
    * Optional callback fired on fetch errors. Default: console.warn.
    */
+  onError?: (error: unknown) => void
+}
+
+export type SageChatRole = "user" | "assistant"
+
+export interface SageChatMessage {
+  role: SageChatRole
+  content: string
+}
+
+export interface SageTenantConfig {
+  /** Stable tenant id for analytics, logs, or future multi-tenant routing. */
+  id?: string
+  /** Human-facing label shown in the default widgets. */
+  label?: string
+  /** Extra headers attached to Sage API requests. */
+  headers?: Record<string, string>
+}
+
+export interface SageQuote {
+  quoteId: string
+  taskHash: string
+  price: string
+  issuedAt?: string
+  expiresAt: string
+  receiverAddress: string
+  reserveBoxId: string
+  deadline: `+${number} blocks`
+}
+
+export type SagePremiumReason =
+  | "explicit_command"
+  | "code_request"
+  | "long_answer"
+  | "deep_research"
+  | "multi_turn_followup"
+
+export interface SageQuoteResponse {
+  premium: boolean
+  reason?: SagePremiumReason
+  rationale?: string
+  quote?: SageQuote
+}
+
+export interface SageVerifyPaymentResponse {
+  ok: true
+  paymentToken: string
+  receiptId: string
+  receiptUrl: string
+  receiptApiUrl: string
+  settlementTxId?: string | null
+  accordSettlementId?: string
+  receiptStorage?: {
+    ok: boolean
+    skipped?: boolean
+    reason?: string
+    path?: string
+    aliases?: string[]
+    error?: string
+  }
+}
+
+export interface SagePremiumPaymentRequired {
+  error: "premium_payment_required"
+  reason?: SagePremiumReason
+  rationale?: string
+}
+
+export type SageChatTier = "free" | "premium"
+
+export type SageChatStreamEvent =
+  | { type: "tier"; tier: SageChatTier; model?: string }
+  | { type: "delta"; text: string }
+  | { type: "done"; stopReason?: string; inputTokens?: number; outputTokens?: number }
+  | { type: "error"; message: string }
+
+export interface SageChatStreamResult {
+  ok: boolean
+  status: number
+  text: string
+  tier?: SageChatTier
+  paymentRequired?: SagePremiumPaymentRequired
+  error?: string
+}
+
+export interface SageReceiptBundle {
+  ok: true
+  type: "sage.receipt_bundle.v1"
+  version: "v1"
+  id: string
+  status: "settled_on_chain" | "verified_pending_redemption"
+  completeness: "full_receipt_bundle" | "full" | "chain_proof_only"
+  public_receipt_url: string
+  api_receipt_url: string
+  explorer_url: string | null
+  accord?: {
+    agreement_hash?: string | null
+    verification_receipt_hash?: string | null
+    settlement_receipt_hash?: string | null
+    agreement_json?: unknown
+    verification_receipt_json?: unknown
+    settlement_receipt_json?: unknown
+  }
+}
+
+export interface SagePaymentWidgetOptions {
+  /**
+   * Base URL of the Sage host. Default: ergoblockchain.org.
+   */
+  apiBase?: string
+  /**
+   * Optional tenant metadata. Current public Sage ignores tenant routing,
+   * but the widget keeps this shape stable for multi-tenant deployments.
+   */
+  tenant?: SageTenantConfig
+  /** Initial chat messages, useful for preloaded context. */
+  initialMessages?: SageChatMessage[]
+  /** Placeholder text for the default input. */
+  placeholder?: string
+  /** Called whenever a message is appended by the widget. */
+  onMessage?: (message: SageChatMessage, messages: SageChatMessage[]) => void
+  /** Called after a payment verifies and Sage returns a receipt link. */
+  onReceipt?: (receipt: SageVerifyPaymentResponse) => void
+  /** Called when the chat stream reports free vs premium tier. */
+  onTier?: (tier: SageChatTier) => void
+  /** Optional callback fired on fetch or stream errors. */
   onError?: (error: unknown) => void
 }
 
