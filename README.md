@@ -42,7 +42,13 @@ export function PaidSageBox() {
   return (
     <SagePaymentWidget
       tenant={{ id: "my-site", label: "My Ergo app" }}
+      paymentInstructions={{
+        helperText: "Issue the quoted Accord Note from your testnet wallet, then paste the Note box id.",
+        walletUrl: "https://www.ergoblockchain.org/build/agent-payments",
+      }}
+      onQuote={(quote) => console.log("Sage quote", quote)}
       onReceipt={(receipt) => console.log("Sage receipt", receipt.receiptUrl)}
+      onReceiptBundle={(bundle) => console.log("Receipt completeness", bundle.completeness)}
     />
   )
 }
@@ -136,10 +142,16 @@ const settlements = data.events.filter((e) => e.type === "settlement")
 | ------------------- | ----------------------------------------- | ----------------------------------------------------------- |
 | `tenant`            | `{ id?: string; label?: string; headers?: Record<string,string> }` | Stable embed metadata and optional request headers. |
 | `initialMessages`   | `SageChatMessage[]`                       | Preloaded chat context.                                     |
+| `title`             | `string`                                  | Widget heading.                                             |
 | `placeholder`       | `string`                                  | Input placeholder.                                          |
+| `paymentInstructions` | `{ helperText?: string; walletUrl?: string; noteBoxLabel?: string }` | Host-specific payment copy and guide link. |
 | `onMessage`         | `(message, messages) => void`             | Fired when the widget appends a chat message.               |
+| `onQuote`           | `(quote) => void`                         | Fired after Sage returns a premium quote.                   |
 | `onReceipt`         | `(receipt) => void`                       | Fired after payment verifies and a receipt URL exists.      |
+| `onReceiptBundle`   | `(bundle) => void`                        | Fired after the widget fetches `/api/sage/receipt/<id>`.    |
 | `onTier`            | `("free" \| "premium") => void`           | Fired when the stream reports model tier.                   |
+| `onPhase`           | `(phase) => void`                         | Fired on widget phase changes: idle, quoting, payment_required, verifying, streaming, error. |
+| `onStatus`          | `(status) => void`                        | Fired with a compact snapshot of phase, tier, quote, receipt, receipt bundle, and error. |
 
 ## Event shape
 

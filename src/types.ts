@@ -191,14 +191,52 @@ export interface SagePaymentWidgetOptions {
   initialMessages?: SageChatMessage[]
   /** Placeholder text for the default input. */
   placeholder?: string
+  /** Widget heading. React also accepts this through component props. */
+  title?: string
+  /** Optional host-specific payment copy and links. */
+  paymentInstructions?: SagePaymentInstructions
   /** Called whenever a message is appended by the widget. */
   onMessage?: (message: SageChatMessage, messages: SageChatMessage[]) => void
+  /** Called after Sage returns a premium quote. */
+  onQuote?: (quote: SageQuoteResponse) => void
   /** Called after a payment verifies and Sage returns a receipt link. */
   onReceipt?: (receipt: SageVerifyPaymentResponse) => void
+  /** Called after the widget fetches the full machine-readable receipt bundle. */
+  onReceiptBundle?: (receipt: SageReceiptBundle) => void
   /** Called when the chat stream reports free vs premium tier. */
   onTier?: (tier: SageChatTier) => void
+  /** Called when the widget phase changes. */
+  onPhase?: (phase: SagePaymentPhase) => void
+  /** Called with a compact state snapshot after important widget events. */
+  onStatus?: (status: SagePaymentWidgetStatus) => void
   /** Optional callback fired on fetch or stream errors. */
   onError?: (error: unknown) => void
+}
+
+export type SagePaymentPhase =
+  | "idle"
+  | "quoting"
+  | "payment_required"
+  | "verifying"
+  | "streaming"
+  | "error"
+
+export interface SagePaymentInstructions {
+  /** Short copy displayed above the Note box input. */
+  helperText?: string
+  /** Optional link to host payment/wallet instructions. */
+  walletUrl?: string
+  /** Optional custom label for the Note box input. */
+  noteBoxLabel?: string
+}
+
+export interface SagePaymentWidgetStatus {
+  phase: SagePaymentPhase
+  tier: SageChatTier | null
+  quote: SageQuoteResponse["quote"] | null
+  receipt: SageVerifyPaymentResponse | null
+  receiptBundle: SageReceiptBundle | null
+  error: string | null
 }
 
 export const DEFAULT_API_BASE = "https://www.ergoblockchain.org"

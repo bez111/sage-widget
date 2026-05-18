@@ -5,6 +5,7 @@ import {
   type FormEvent,
 } from "react"
 import {
+  fetchSageReceipt,
   fetchSageQuote,
   streamSageChat,
   verifySagePayment,
@@ -12,8 +13,10 @@ import {
 import {
   DEFAULT_API_BASE,
   type SageChatMessage,
+  type SagePaymentPhase,
   type SagePaymentWidgetOptions,
   type SageQuoteResponse,
+  type SageReceiptBundle,
   type SageVerifyPaymentResponse,
 } from "../types"
 
@@ -23,14 +26,13 @@ export interface SagePaymentWidgetProps extends SagePaymentWidgetOptions {
   title?: string
 }
 
-type Phase = "idle" | "quoting" | "payment_required" | "verifying" | "streaming" | "error"
-
 export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
   const {
     apiBase = DEFAULT_API_BASE,
     tenant,
     initialMessages = [],
     placeholder = "Ask Sage about Ergo or agent payments...",
+    paymentInstructions,
     className,
     style,
     title = "Ask Sage",
@@ -38,11 +40,12 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
 
   const [messages, setMessages] = useState<SageChatMessage[]>(initialMessages)
   const [input, setInput] = useState("")
-  const [phase, setPhase] = useState<Phase>("idle")
+  const [phase, setPhase] = useState<SagePaymentPhase>("idle")
   const [quoteResponse, setQuoteResponse] = useState<SageQuoteResponse | null>(null)
   const [activeQuestion, setActiveQuestion] = useState("")
   const [noteBoxId, setNoteBoxId] = useState("")
   const [receipt, setReceipt] = useState<SageVerifyPaymentResponse | null>(null)
+  const [receiptBundle, setReceiptBundle] = useState<SageReceiptBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tier, setTier] = useState<"free" | "premium" | null>(null)
 
@@ -61,11 +64,12 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     setInput("")
     setError(null)
     setReceipt(null)
+    setReceiptBundle(null)
     setQuoteResponse(null)
     setActiveQuestion(question)
     setNoteBoxId("")
     setTier(null)
-    setPhase("quoting")
+    transition("quoting")
 
     try {
       const quote = await fetchSageQuote({
@@ -73,10 +77,11 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
         question,
         history: messages,
       })
+      props.onQuote?.(quote)
       if (quote.premium) {
         if (!quote.quote) throw new Error("Sage marked this question premium but did not return a quote.")
         setQuoteResponse(quote)
-        setPhase("payment_required")
+        transition("payment_required", { quote: quote.quote })
         return
       }
       await streamAnswer(nextMessages)
@@ -90,7 +95,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     const note = noteBoxId.trim()
     if (!quote || !activeQuestion || !note || busy) return
     setError(null)
-    setPhase("verifying")
+    transition("verifying")
     try {
       const verified = await verifySagePayment({
         ...apiOpts,
@@ -100,15 +105,24 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       })
       setReceipt(verified)
       props.onReceipt?.(verified)
+      transition("streaming", { receipt: verified })
+      try {
+        const bundle = await fetchSageReceipt(verified.receiptId, apiOpts)
+        setReceiptBundle(bundle)
+        props.onReceiptBundle?.(bundle)
+        emitStatus("streaming", { receipt: verified, receiptBundle: bundle })
+      } catch (bundleErr) {
+        props.onError?.(bundleErr)
+      }
       await streamAnswer(messages, verified.paymentToken)
     } catch (err) {
-      setPhase("payment_required")
+      transition("payment_required")
       fail(err, false)
     }
   }
 
   async function streamAnswer(baseMessages: SageChatMessage[], paymentToken?: string) {
-    setPhase("streaming")
+    transition("streaming")
     let text = ""
     const placeholderMessage: SageChatMessage = { role: "assistant", content: "" }
     setMessages([...baseMessages, placeholderMessage])
@@ -136,8 +150,9 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
           question: activeQuestion,
           history: baseMessages.slice(0, -1),
         })
+        props.onQuote?.(quote)
         setQuoteResponse(quote)
-        setPhase("payment_required")
+        transition("payment_required", { quote: quote.quote ?? null })
         return
       }
       throw new Error(result.error ?? "Sage chat failed.")
@@ -146,14 +161,48 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     if (result.text && result.text !== text) {
       setMessages([...baseMessages, { role: "assistant", content: result.text }])
     }
-    setPhase("idle")
+    transition("idle")
   }
 
   function fail(err: unknown, setErrorPhase: boolean = true) {
     const message = err instanceof Error ? err.message : "Sage request failed."
     setError(message)
-    if (setErrorPhase) setPhase("error")
+    if (setErrorPhase) transition("error", { error: message })
+    else emitStatus(phase, { error: message })
     props.onError?.(err)
+  }
+
+  function transition(
+    next: SagePaymentPhase,
+    overrides: Partial<{
+      quote: SageQuoteResponse["quote"] | null
+      receipt: SageVerifyPaymentResponse | null
+      receiptBundle: SageReceiptBundle | null
+      error: string | null
+    }> = {},
+  ) {
+    setPhase(next)
+    props.onPhase?.(next)
+    emitStatus(next, overrides)
+  }
+
+  function emitStatus(
+    nextPhase: SagePaymentPhase,
+    overrides: Partial<{
+      quote: SageQuoteResponse["quote"] | null
+      receipt: SageVerifyPaymentResponse | null
+      receiptBundle: SageReceiptBundle | null
+      error: string | null
+    }> = {},
+  ) {
+    props.onStatus?.({
+      phase: nextPhase,
+      tier,
+      quote: overrides.quote ?? quoteResponse?.quote ?? null,
+      receipt: overrides.receipt ?? receipt,
+      receiptBundle: overrides.receiptBundle ?? receiptBundle,
+      error: overrides.error ?? error,
+    })
   }
 
   const quote = quoteResponse?.quote
@@ -189,12 +238,24 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
             <strong>Payment required</strong>
             <span>{quote.price} ERG testnet</span>
           </div>
+          <p style={helperStyle}>
+            {paymentInstructions?.helperText ??
+              "Issue an Ergo testnet Note for this quote, then paste the created Note box id."}
+            {paymentInstructions?.walletUrl ? (
+              <>
+                {" "}
+                <a href={paymentInstructions.walletUrl} target="_blank" rel="noopener noreferrer" style={inlineLinkStyle}>
+                  Wallet guide
+                </a>
+              </>
+            ) : null}
+          </p>
           <Field label="Quote" value={quote.quoteId} />
           <Field label="Receiver" value={quote.receiverAddress} copy />
           <Field label="Reserve box" value={quote.reserveBoxId} copy />
           <Field label="Task hash" value={quote.taskHash} copy />
           <label style={labelStyle}>
-            Note box id
+            {paymentInstructions?.noteBoxLabel ?? "Note box id"}
             <input
               value={noteBoxId}
               onChange={(e) => setNoteBoxId(e.currentTarget.value)}
@@ -217,6 +278,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       {receipt ? (
         <a href={receipt.receiptUrl} target="_blank" rel="noopener noreferrer" style={receiptStyle}>
           Receipt: {shortId(receipt.receiptId)}
+          {receiptBundle ? ` · ${receiptBundle.completeness}` : ""}
         </a>
       ) : null}
 
@@ -362,6 +424,18 @@ const paymentHeaderStyle: CSSProperties = {
   justifyContent: "space-between",
   color: "#fed7aa",
   fontSize: 13,
+}
+
+const helperStyle: CSSProperties = {
+  color: "#fdba74",
+  fontSize: 12,
+  lineHeight: 1.45,
+  margin: 0,
+}
+
+const inlineLinkStyle: CSSProperties = {
+  color: "#67e8f9",
+  textDecoration: "none",
 }
 
 const labelStyle: CSSProperties = {

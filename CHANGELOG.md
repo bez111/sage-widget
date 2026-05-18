@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Paid widget phase/status callbacks: `onQuote`, `onReceiptBundle`, `onPhase`, `onStatus`.
+- Host-provided `paymentInstructions` for wallet guidance and custom Note box labels.
+- Receipt bundle fetch after payment verification so embeds can inspect `full_receipt_bundle` vs fallback state.
+- Copy buttons for vanilla payment fields, matching the React widget UX.
+
 ## [0.2.0] — 2026-05-16
 
 Prepared paid Sage embed surface.

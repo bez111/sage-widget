@@ -1,4 +1,5 @@
 import {
+  fetchSageReceipt,
   fetchSageQuote,
   streamSageChat,
   verifySagePayment,
@@ -6,8 +7,10 @@ import {
 import {
   DEFAULT_API_BASE,
   type SageChatMessage,
+  type SagePaymentPhase,
   type SagePaymentWidgetOptions,
   type SageQuoteResponse,
+  type SageReceiptBundle,
   type SageVerifyPaymentResponse,
 } from "../types"
 
@@ -17,8 +20,6 @@ export interface MountSagePaymentWidgetHandle {
   current: () => SageChatMessage[]
 }
 
-type Phase = "idle" | "quoting" | "payment_required" | "verifying" | "streaming" | "error"
-
 export function mountSagePaymentWidget(
   target: Element,
   opts: SagePaymentWidgetOptions = {},
@@ -26,12 +27,13 @@ export function mountSagePaymentWidget(
   const apiBase = opts.apiBase ?? DEFAULT_API_BASE
   let destroyed = false
   let messages = [...(opts.initialMessages ?? [])]
-  let phase: Phase = "idle"
+  let phase: SagePaymentPhase = "idle"
   let inputValue = ""
   let noteBoxId = ""
   let activeQuestion = ""
   let quoteResponse: SageQuoteResponse | null = null
   let receipt: SageVerifyPaymentResponse | null = null
+  let receiptBundle: SageReceiptBundle | null = null
   let error: string | null = null
   let tier: "free" | "premium" | null = null
 
@@ -48,12 +50,13 @@ export function mountSagePaymentWidget(
     noteBoxId = ""
     quoteResponse = null
     receipt = null
+    receiptBundle = null
     error = null
     tier = null
     const userMessage: SageChatMessage = { role: "user", content: question }
     messages = [...messages, userMessage]
     opts.onMessage?.(userMessage, messages)
-    phase = "quoting"
+    transition("quoting")
     render()
     try {
       const quote = await fetchSageQuote({
@@ -63,10 +66,11 @@ export function mountSagePaymentWidget(
         history: messages.slice(0, -1),
       })
       if (destroyed) return
+      opts.onQuote?.(quote)
       if (quote.premium) {
         if (!quote.quote) throw new Error("Sage marked this question premium but did not return a quote.")
         quoteResponse = quote
-        phase = "payment_required"
+        transition("payment_required")
         render()
         return
       }
@@ -80,7 +84,7 @@ export function mountSagePaymentWidget(
     const quote = quoteResponse?.quote
     const note = noteBoxId.trim()
     if (!quote || !activeQuestion || !note || isBusy()) return
-    phase = "verifying"
+    transition("verifying")
     error = null
     render()
     try {
@@ -94,15 +98,23 @@ export function mountSagePaymentWidget(
       if (destroyed) return
       receipt = verified
       opts.onReceipt?.(verified)
+      transition("streaming")
+      try {
+        receiptBundle = await fetchSageReceipt(verified.receiptId, { apiBase, tenant: opts.tenant })
+        opts.onReceiptBundle?.(receiptBundle)
+        emitStatus("streaming")
+      } catch (bundleErr) {
+        opts.onError?.(bundleErr)
+      }
       await streamAnswer(messages, verified.paymentToken)
     } catch (err) {
-      phase = "payment_required"
+      transition("payment_required")
       fail(err, false)
     }
   }
 
   async function streamAnswer(baseMessages: SageChatMessage[], paymentToken?: string) {
-    phase = "streaming"
+    transition("streaming")
     messages = [...baseMessages, { role: "assistant", content: "" }]
     render()
     let text = ""
@@ -127,12 +139,25 @@ export function mountSagePaymentWidget(
     })
     if (destroyed) return
     if (!result.ok) {
+      if (result.paymentRequired) {
+        const quote = await fetchSageQuote({
+          apiBase,
+          tenant: opts.tenant,
+          question: activeQuestion,
+          history: baseMessages.slice(0, -1),
+        })
+        opts.onQuote?.(quote)
+        quoteResponse = quote
+        transition("payment_required")
+        render()
+        return
+      }
       throw new Error(result.error ?? "Sage chat failed.")
     }
     if (result.text && result.text !== text) {
       messages = [...baseMessages, { role: "assistant", content: result.text }]
     }
-    phase = "idle"
+    transition("idle")
     render()
   }
 
@@ -146,7 +171,7 @@ export function mountSagePaymentWidget(
     eyebrow.textContent = opts.tenant?.label ?? "Ergo agent economy"
     applyStyles(eyebrow, eyebrowStyle)
     const title = document.createElement("h2")
-    title.textContent = "Ask Sage"
+    title.textContent = opts.title ?? "Ask Sage"
     applyStyles(title, titleStyle)
     titleWrap.append(eyebrow, title)
     const badge = document.createElement("span")
@@ -182,7 +207,9 @@ export function mountSagePaymentWidget(
       a.href = receipt.receiptUrl
       a.target = "_blank"
       a.rel = "noopener noreferrer"
-      a.textContent = `Receipt: ${shortId(receipt.receiptId)}`
+      a.textContent = `Receipt: ${shortId(receipt.receiptId)}${
+        receiptBundle ? ` · ${receiptBundle.completeness}` : ""
+      }`
       applyStyles(a, receiptStyle)
       root.appendChild(a)
     }
@@ -230,6 +257,22 @@ export function mountSagePaymentWidget(
     top.append(strong, price)
     panel.appendChild(top)
 
+    const helper = document.createElement("p")
+    helper.textContent =
+      opts.paymentInstructions?.helperText ??
+      "Issue an Ergo testnet Note for this quote, then paste the created Note box id."
+    applyStyles(helper, helperStyle)
+    if (opts.paymentInstructions?.walletUrl) {
+      const link = document.createElement("a")
+      link.href = opts.paymentInstructions.walletUrl
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
+      link.textContent = " Wallet guide"
+      applyStyles(link, inlineLinkStyle)
+      helper.appendChild(link)
+    }
+    panel.appendChild(helper)
+
     panel.append(
       field("Quote", quote.quoteId),
       field("Receiver", quote.receiverAddress),
@@ -238,7 +281,7 @@ export function mountSagePaymentWidget(
     )
 
     const label = document.createElement("label")
-    label.textContent = "Note box id"
+    label.textContent = opts.paymentInstructions?.noteBoxLabel ?? "Note box id"
     applyStyles(label, labelStyle)
     const input = document.createElement("input")
     input.value = noteBoxId
@@ -271,7 +314,12 @@ export function mountSagePaymentWidget(
     const code = document.createElement("code")
     code.textContent = value
     applyStyles(code, fieldValueStyle)
-    row.append(label, code)
+    const copy = document.createElement("button")
+    copy.type = "button"
+    copy.textContent = "Copy"
+    copy.addEventListener("click", () => copyText(value))
+    applyStyles(copy, copyButtonStyle)
+    row.append(label, code, copy)
     return row
   }
 
@@ -281,9 +329,27 @@ export function mountSagePaymentWidget(
 
   function fail(err: unknown, setErrorPhase: boolean = true) {
     error = err instanceof Error ? err.message : "Sage request failed."
-    if (setErrorPhase) phase = "error"
+    if (setErrorPhase) transition("error")
+    else emitStatus(phase)
     opts.onError?.(err)
     render()
+  }
+
+  function transition(next: SagePaymentPhase) {
+    phase = next
+    opts.onPhase?.(next)
+    emitStatus(next)
+  }
+
+  function emitStatus(next: SagePaymentPhase) {
+    opts.onStatus?.({
+      phase: next,
+      tier,
+      quote: quoteResponse?.quote ?? null,
+      receipt,
+      receiptBundle,
+      error,
+    })
   }
 
   render()
@@ -304,6 +370,12 @@ function applyStyles(el: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
 
 function shortId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value
+}
+
+function copyText(value: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    void navigator.clipboard.writeText(value)
+  }
 }
 
 const rootStyle: Partial<CSSStyleDeclaration> = {
@@ -408,6 +480,18 @@ const paymentHeaderStyle: Partial<CSSStyleDeclaration> = {
   fontSize: "13px",
 }
 
+const helperStyle: Partial<CSSStyleDeclaration> = {
+  color: "#fdba74",
+  fontSize: "12px",
+  lineHeight: "1.45",
+  margin: "0",
+}
+
+const inlineLinkStyle: Partial<CSSStyleDeclaration> = {
+  color: "#67e8f9",
+  textDecoration: "none",
+}
+
 const labelStyle: Partial<CSSStyleDeclaration> = {
   display: "grid",
   gap: "6px",
@@ -417,7 +501,7 @@ const labelStyle: Partial<CSSStyleDeclaration> = {
 
 const fieldStyle: Partial<CSSStyleDeclaration> = {
   display: "grid",
-  gridTemplateColumns: "88px 1fr",
+  gridTemplateColumns: "88px 1fr auto",
   alignItems: "center",
   gap: "8px",
   fontSize: "12px",
@@ -433,6 +517,15 @@ const fieldValueStyle: Partial<CSSStyleDeclaration> = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   fontSize: "11px",
+}
+
+const copyButtonStyle: Partial<CSSStyleDeclaration> = {
+  border: "1px solid rgba(255,255,255,.16)",
+  background: "rgba(255,255,255,.06)",
+  color: "#f8fafc",
+  borderRadius: "4px",
+  padding: "4px 7px",
+  cursor: "pointer",
 }
 
 const formStyle: Partial<CSSStyleDeclaration> = {
