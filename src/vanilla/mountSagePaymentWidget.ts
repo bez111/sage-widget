@@ -18,6 +18,16 @@ export interface MountSagePaymentWidgetHandle {
   send: (question: string) => Promise<void>
   destroy: () => void
   current: () => SageChatMessage[]
+  status: () => {
+    phase: SagePaymentPhase
+    tier: "free" | "premium" | null
+    quote: SageQuoteResponse["quote"] | null
+    receipt: SageVerifyPaymentResponse | null
+    receiptBundle: SageReceiptBundle | null
+    error: string | null
+    messages: SageChatMessage[]
+    activeQuestion: string | null
+  }
 }
 
 export function mountSagePaymentWidget(
@@ -87,29 +97,38 @@ export function mountSagePaymentWidget(
     transition("verifying")
     error = null
     render()
+    let verified: SageVerifyPaymentResponse
     try {
-      const verified = await verifySagePayment({
+      verified = await verifySagePayment({
         apiBase,
         tenant: opts.tenant,
         quote,
         question: activeQuestion,
         noteBoxId: note,
       })
-      if (destroyed) return
-      receipt = verified
-      opts.onReceipt?.(verified)
-      transition("streaming")
-      try {
-        receiptBundle = await fetchSageReceipt(verified.receiptId, { apiBase, tenant: opts.tenant })
-        opts.onReceiptBundle?.(receiptBundle)
-        emitStatus("streaming")
-      } catch (bundleErr) {
-        opts.onError?.(bundleErr)
-      }
-      await streamAnswer(messages, verified.paymentToken)
     } catch (err) {
       transition("payment_required")
       fail(err, false)
+      return
+    }
+
+    if (destroyed) return
+    receipt = verified
+    opts.onReceipt?.(verified)
+    quoteResponse = null
+    noteBoxId = ""
+    transition("streaming")
+    try {
+      receiptBundle = await fetchSageReceipt(verified.receiptId, { apiBase, tenant: opts.tenant })
+      opts.onReceiptBundle?.(receiptBundle)
+      emitStatus("streaming")
+    } catch (bundleErr) {
+      opts.onError?.(bundleErr)
+    }
+    try {
+      await streamAnswer(messages, verified.paymentToken)
+    } catch (err) {
+      fail(err)
     }
   }
 
@@ -233,6 +252,7 @@ export function mountSagePaymentWidget(
     input.disabled = isBusy()
     input.addEventListener("input", () => {
       inputValue = input.value
+      button.disabled = !inputValue.trim() || isBusy()
     })
     applyStyles(input, inputStyle)
     const button = document.createElement("button")
@@ -289,6 +309,7 @@ export function mountSagePaymentWidget(
     input.disabled = isBusy()
     input.addEventListener("input", () => {
       noteBoxId = input.value
+      verify.disabled = !noteBoxId.trim() || isBusy()
     })
     applyStyles(input, inputStyle)
     label.appendChild(input)
@@ -349,6 +370,8 @@ export function mountSagePaymentWidget(
       receipt,
       receiptBundle,
       error,
+      messages,
+      activeQuestion: activeQuestion || null,
     })
   }
 
@@ -361,6 +384,16 @@ export function mountSagePaymentWidget(
       root.remove()
     },
     current: () => messages,
+    status: () => ({
+      phase,
+      tier,
+      quote: quoteResponse?.quote ?? null,
+      receipt,
+      receiptBundle,
+      error,
+      messages,
+      activeQuestion: activeQuestion || null,
+    }),
   }
 }
 
@@ -384,7 +417,7 @@ const rootStyle: Partial<CSSStyleDeclaration> = {
   border: "1px solid rgba(255,255,255,.1)",
   borderRadius: "8px",
   padding: "16px",
-  fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
   boxSizing: "border-box",
   width: "100%",
   maxWidth: "520px",
@@ -501,7 +534,7 @@ const labelStyle: Partial<CSSStyleDeclaration> = {
 
 const fieldStyle: Partial<CSSStyleDeclaration> = {
   display: "grid",
-  gridTemplateColumns: "88px 1fr auto",
+  gridTemplateColumns: "minmax(70px, 88px) minmax(0, 1fr) auto",
   alignItems: "center",
   gap: "8px",
   fontSize: "12px",
@@ -530,7 +563,7 @@ const copyButtonStyle: Partial<CSSStyleDeclaration> = {
 
 const formStyle: Partial<CSSStyleDeclaration> = {
   display: "grid",
-  gridTemplateColumns: "1fr auto",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: "8px",
   marginTop: "12px",
 }

@@ -17,6 +17,7 @@ export {
   fetchSageQuote,
   verifySagePayment,
   fetchSageReceipt,
+  isFullSageReceiptBundle,
   streamSageChat,
   nanoToErg,
   relativeTime,

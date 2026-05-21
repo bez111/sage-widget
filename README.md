@@ -3,9 +3,20 @@
 [![npm](https://img.shields.io/npm/v/@ergoblockchain/sage-widget.svg)](https://www.npmjs.com/package/@ergoblockchain/sage-widget)
 [![license](https://img.shields.io/npm/l/@ergoblockchain/sage-widget.svg)](./LICENSE)
 
-Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockchain.org](https://www.ergoblockchain.org). Use the read-only activity feed, or embed the paid Sage chat flow with quote, manual Note verification, streaming answer, and receipt link.
+Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockchain.org](https://www.ergoblockchain.org). Use the read-only activity feed, or embed the paid Sage chat flow with quote, manual Note verification, streaming answer, receipt JSON, and public receipt link.
 
 > _Why this matters:_ Sage settles real paid AI queries on Ergo testnet. The feed makes the "agent-economy" thesis visibly provable wherever you embed it — not a marketing claim, a list of public on-chain receipts that update live.
+
+## What v0.2 ships
+
+- `<SagePaymentWidget />` React component.
+- `mountSagePaymentWidget(target, opts)` vanilla DOM mount.
+- Typed clients for quote, verify, chat stream, receipt bundle, and activity feed.
+- Tenant metadata and host-provided payment instructions.
+- Payment lifecycle callbacks: quote, receipt, receipt bundle, tier, phase, status.
+- Public receipt links plus machine-readable `/api/sage/receipt/<id>` links.
+
+The canonical Sage host is **testnet live proof**. It can produce `full_receipt_bundle` receipts with Agreement JSON, Verification Receipt JSON, and Settlement Receipt JSON. Mainnet readiness remains audit-gated.
 
 ## Install
 
@@ -93,6 +104,9 @@ const handle = mountSagePaymentWidget(document.getElementById("sage-chat")!, {
 
 // You can also start a question programmatically:
 await handle.send("/research explain Ergo Notes")
+
+// Inspect embed state:
+console.log(handle.status().receipt?.receiptUrl)
 ```
 
 ## Just the types
@@ -111,6 +125,18 @@ import {
 
 const data: SageActivityResponse = await fetchSageActivity({ limit: 10 })
 const settlements = data.events.filter((e) => e.type === "settlement")
+```
+
+Useful helpers:
+
+```ts
+import { fetchSageReceipt, isFullSageReceiptBundle } from "@ergoblockchain/sage-widget"
+
+const receipt = await fetchSageReceipt("f8752d10a2ece92fbc88065c3b92b94da621ec65943098f43c9e084deb763d81")
+
+if (isFullSageReceiptBundle(receipt)) {
+  console.log("Agreement JSON is present", receipt.accord?.agreement_json)
+}
 ```
 
 ## Render-prop / bring-your-own-design
@@ -153,6 +179,20 @@ const settlements = data.events.filter((e) => e.type === "settlement")
 | `onPhase`           | `(phase) => void`                         | Fired on widget phase changes: idle, quoting, payment_required, verifying, streaming, error. |
 | `onStatus`          | `(status) => void`                        | Fired with a compact snapshot of phase, tier, quote, receipt, receipt bundle, and error. |
 
+`onStatus` and the vanilla `handle.status()` also include `messages` and `activeQuestion`, so hosts can mirror widget state into their own telemetry or UI.
+
+## Payment model
+
+v0.2 deliberately does **not** sign wallet transactions inside the widget. The widget shows the quote fields, accepts a Note box id, verifies it through Sage, then streams the answer and exposes the receipt. Hosts can pair it with their own wallet flow, Accord tooling, or a manual testnet Note issuer.
+
+For the canonical site, a successful paid flow looks like:
+
+```text
+question -> quote -> Ergo testnet Note -> verify-payment -> receipt bundle -> Sage answer
+```
+
+The public receipt API is the source of truth. Articles, dashboards, and registry entries should link to it instead of duplicating receipt fields.
+
 ## Event shape
 
 Each event in `response.events` is a typed object:
@@ -178,6 +218,16 @@ For settlements, use `paymentNanoErg` (the value of the consumed Note) for "amou
 - **Receipt format**: [`/r/sage/<settlement_tx_id>`](https://www.ergoblockchain.org/r/sage/f697e4841dd9a0c689d0b83a311130b85a0cfbab123230a6c40284b44c4cafef)
 - **Accord Protocol**: [github.com/accord-protocol/accord-protocol](https://github.com/accord-protocol/accord-protocol)
 - **Sage in the registry**: [accord-protocol/registry/providers/sage.json](https://github.com/accord-protocol/accord-protocol/blob/main/registry/providers/sage.json)
+
+## Release checks
+
+Before publishing:
+
+```bash
+npm run typecheck
+npm run smoke
+npm pack --dry-run
+```
 
 ## Roadmap
 

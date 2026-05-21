@@ -55,6 +55,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "smoke": "npm run build && node scripts/smoke.mjs",
     "prepublishOnly": "npm run build && npm run typecheck",
     "clean": "rm -rf dist"
   },

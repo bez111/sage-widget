@@ -110,6 +110,10 @@ export async function fetchSageReceipt(
   return body as SageReceiptBundle
 }
 
+export function isFullSageReceiptBundle(value: SageReceiptBundle | null | undefined): boolean {
+  return value?.ok === true && value.completeness === "full_receipt_bundle"
+}
+
 export async function streamSageChat(
   opts: StreamSageChatOptions,
 ): Promise<SageChatStreamResult> {
@@ -162,6 +166,24 @@ export async function streamSageChat(
     for (const part of parts) {
       const event = parseSseEvent(part)
       if (!event) continue
+      if (event.type === "delta") text += event.text
+      if (event.type === "tier") tier = event.tier
+      opts.onEvent?.(event)
+      if (event.type === "error") {
+        return {
+          ok: false,
+          status: res.status,
+          text,
+          tier,
+          error: event.message,
+        }
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const event = parseSseEvent(buffer)
+    if (event) {
       if (event.type === "delta") text += event.text
       if (event.type === "tier") tier = event.tier
       opts.onEvent?.(event)

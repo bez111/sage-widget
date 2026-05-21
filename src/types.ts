@@ -237,6 +237,10 @@ export interface SagePaymentWidgetStatus {
   receipt: SageVerifyPaymentResponse | null
   receiptBundle: SageReceiptBundle | null
   error: string | null
+  /** Latest chat transcript known to the widget. */
+  messages: SageChatMessage[]
+  /** Question currently tied to the active quote/payment cycle. */
+  activeQuestion: string | null
 }
 
 export const DEFAULT_API_BASE = "https://www.ergoblockchain.org"

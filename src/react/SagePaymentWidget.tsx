@@ -1,5 +1,7 @@
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -48,6 +50,14 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
   const [receiptBundle, setReceiptBundle] = useState<SageReceiptBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tier, setTier] = useState<"free" | "premium" | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const busy = phase === "quoting" || phase === "verifying" || phase === "streaming"
   const apiOpts = useMemo(() => ({ apiBase, tenant }), [apiBase, tenant])
@@ -84,7 +94,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
         transition("payment_required", { quote: quote.quote })
         return
       }
-      await streamAnswer(nextMessages)
+      await streamAnswer(nextMessages, undefined, question)
     } catch (err) {
       fail(err)
     }
@@ -96,32 +106,47 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     if (!quote || !activeQuestion || !note || busy) return
     setError(null)
     transition("verifying")
+    let verified: SageVerifyPaymentResponse
     try {
-      const verified = await verifySagePayment({
+      verified = await verifySagePayment({
         ...apiOpts,
         quote,
         question: activeQuestion,
         noteBoxId: note,
       })
-      setReceipt(verified)
-      props.onReceipt?.(verified)
-      transition("streaming", { receipt: verified })
-      try {
-        const bundle = await fetchSageReceipt(verified.receiptId, apiOpts)
-        setReceiptBundle(bundle)
-        props.onReceiptBundle?.(bundle)
-        emitStatus("streaming", { receipt: verified, receiptBundle: bundle })
-      } catch (bundleErr) {
-        props.onError?.(bundleErr)
-      }
-      await streamAnswer(messages, verified.paymentToken)
     } catch (err) {
       transition("payment_required")
       fail(err, false)
+      return
+    }
+
+    if (!mountedRef.current) return
+    setReceipt(verified)
+    props.onReceipt?.(verified)
+    setQuoteResponse(null)
+    setNoteBoxId("")
+    transition("streaming", { quote: null, receipt: verified })
+    try {
+      const bundle = await fetchSageReceipt(verified.receiptId, apiOpts)
+      if (!mountedRef.current) return
+      setReceiptBundle(bundle)
+      props.onReceiptBundle?.(bundle)
+      emitStatus("streaming", { quote: null, receipt: verified, receiptBundle: bundle })
+    } catch (bundleErr) {
+      props.onError?.(bundleErr)
+    }
+    try {
+      await streamAnswer(messages, verified.paymentToken, activeQuestion)
+    } catch (err) {
+      fail(err)
     }
   }
 
-  async function streamAnswer(baseMessages: SageChatMessage[], paymentToken?: string) {
+  async function streamAnswer(
+    baseMessages: SageChatMessage[],
+    paymentToken?: string,
+    fallbackQuestion?: string,
+  ) {
     transition("streaming")
     let text = ""
     const placeholderMessage: SageChatMessage = { role: "assistant", content: "" }
@@ -132,9 +157,11 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       messages: baseMessages,
       paymentToken,
       onEvent(event) {
+        if (!mountedRef.current) return
         if (event.type === "tier") {
           setTier(event.tier)
           props.onTier?.(event.tier)
+          emitStatus("streaming", { tier: event.tier, messages: baseMessages })
         }
         if (event.type === "delta") {
           text += event.text
@@ -145,19 +172,23 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
 
     if (!result.ok) {
       if (result.paymentRequired) {
+        const question = fallbackQuestion ?? lastUserQuestion(baseMessages) ?? activeQuestion
         const quote = await fetchSageQuote({
           ...apiOpts,
-          question: activeQuestion,
+          question,
           history: baseMessages.slice(0, -1),
         })
+        if (!mountedRef.current) return
         props.onQuote?.(quote)
         setQuoteResponse(quote)
+        setActiveQuestion(question)
         transition("payment_required", { quote: quote.quote ?? null })
         return
       }
       throw new Error(result.error ?? "Sage chat failed.")
     }
 
+    if (!mountedRef.current) return
     if (result.text && result.text !== text) {
       setMessages([...baseMessages, { role: "assistant", content: result.text }])
     }
@@ -179,6 +210,9 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       receipt: SageVerifyPaymentResponse | null
       receiptBundle: SageReceiptBundle | null
       error: string | null
+      tier: "free" | "premium" | null
+      messages: SageChatMessage[]
+      activeQuestion: string | null
     }> = {},
   ) {
     setPhase(next)
@@ -193,19 +227,27 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       receipt: SageVerifyPaymentResponse | null
       receiptBundle: SageReceiptBundle | null
       error: string | null
+      tier: "free" | "premium" | null
+      messages: SageChatMessage[]
+      activeQuestion: string | null
     }> = {},
   ) {
+    const has = (key: keyof typeof overrides) =>
+      Object.prototype.hasOwnProperty.call(overrides, key)
     props.onStatus?.({
       phase: nextPhase,
-      tier,
-      quote: overrides.quote ?? quoteResponse?.quote ?? null,
-      receipt: overrides.receipt ?? receipt,
-      receiptBundle: overrides.receiptBundle ?? receiptBundle,
-      error: overrides.error ?? error,
+      tier: has("tier") ? overrides.tier ?? null : tier,
+      quote: has("quote") ? overrides.quote ?? null : quoteResponse?.quote ?? null,
+      receipt: has("receipt") ? overrides.receipt ?? null : receipt,
+      receiptBundle: has("receiptBundle") ? overrides.receiptBundle ?? null : receiptBundle,
+      error: has("error") ? overrides.error ?? null : error,
+      messages: overrides.messages ?? messages,
+      activeQuestion: has("activeQuestion") ? overrides.activeQuestion ?? null : activeQuestion || null,
     })
   }
 
   const quote = quoteResponse?.quote
+  const showPaymentPanel = quote && !receipt
 
   return (
     <section className={className} style={{ ...rootStyle, ...style }}>
@@ -232,7 +274,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
         )}
       </div>
 
-      {quote ? (
+      {showPaymentPanel ? (
         <div style={paymentStyle}>
           <div style={paymentHeaderStyle}>
             <strong>Payment required</strong>
@@ -276,10 +318,15 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       ) : null}
 
       {receipt ? (
-        <a href={receipt.receiptUrl} target="_blank" rel="noopener noreferrer" style={receiptStyle}>
-          Receipt: {shortId(receipt.receiptId)}
-          {receiptBundle ? ` · ${receiptBundle.completeness}` : ""}
-        </a>
+        <div style={receiptPanelStyle}>
+          <a href={receipt.receiptUrl} target="_blank" rel="noopener noreferrer" style={receiptStyle}>
+            Receipt: {shortId(receipt.receiptId)}
+            {receiptBundle ? ` · ${receiptBundle.completeness}` : ""}
+          </a>
+          <a href={receipt.receiptApiUrl} target="_blank" rel="noopener noreferrer" style={receiptApiStyle}>
+            machine-readable JSON
+          </a>
+        </div>
       ) : null}
 
       {error ? <div style={errorStyle}>{error}</div> : null}
@@ -324,13 +371,21 @@ function shortId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value
 }
 
+function lastUserQuestion(messages: SageChatMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role === "user" && message.content.trim()) return message.content.trim()
+  }
+  return null
+}
+
 const rootStyle: CSSProperties = {
   background: "#070707",
   color: "#f8fafc",
   border: "1px solid rgba(255,255,255,.1)",
   borderRadius: 8,
   padding: 16,
-  fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
   boxSizing: "border-box",
   width: "100%",
   maxWidth: 520,
@@ -447,7 +502,7 @@ const labelStyle: CSSProperties = {
 
 const fieldStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "88px 1fr auto",
+  gridTemplateColumns: "minmax(70px, 88px) minmax(0, 1fr) auto",
   alignItems: "center",
   gap: 8,
   fontSize: 12,
@@ -476,7 +531,7 @@ const copyButtonStyle: CSSProperties = {
 
 const formStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1fr auto",
+  gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: 8,
   marginTop: 12,
 }
@@ -508,10 +563,27 @@ const primaryButtonStyle: CSSProperties = {
 }
 
 const receiptStyle: CSSProperties = {
-  display: "block",
-  marginTop: 10,
+  display: "inline-flex",
   color: "#67e8f9",
   fontSize: 13,
+  textDecoration: "none",
+}
+
+const receiptPanelStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: 10,
+  marginTop: 10,
+  border: "1px solid rgba(103,232,249,.22)",
+  background: "rgba(103,232,249,.07)",
+  borderRadius: 6,
+  padding: "9px 10px",
+}
+
+const receiptApiStyle: CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 12,
   textDecoration: "none",
 }
 
