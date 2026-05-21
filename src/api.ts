@@ -11,6 +11,8 @@ import {
   type SageChatMessage,
   type SageChatStreamEvent,
   type SageChatStreamResult,
+  type SagePaymentIntent,
+  type SagePaymentNetwork,
   type SageQuote,
   type SageQuoteResponse,
   type SageReceiptBundle,
@@ -41,6 +43,15 @@ export interface VerifySagePaymentOptions extends SageRequestOptions {
   quote: SageQuote
   question: string
   noteBoxId: string
+}
+
+export interface CreateSagePaymentIntentOptions {
+  quote: SageQuote
+  question: string
+  apiBase?: string
+  tenant?: SageTenantConfig
+  network?: SagePaymentNetwork
+  createdAt?: string
 }
 
 export interface StreamSageChatOptions extends SageRequestOptions {
@@ -112,6 +123,34 @@ export async function fetchSageReceipt(
 
 export function isFullSageReceiptBundle(value: SageReceiptBundle | null | undefined): boolean {
   return value?.ok === true && value.completeness === "full_receipt_bundle"
+}
+
+export function createSagePaymentIntent(
+  opts: CreateSagePaymentIntentOptions,
+): SagePaymentIntent {
+  const base = trimSlash(opts.apiBase ?? DEFAULT_API_BASE)
+  return {
+    type: "sage.payment_intent.v1",
+    network: opts.network ?? "ergo-testnet",
+    createdAt: opts.createdAt ?? new Date().toISOString(),
+    question: opts.question,
+    ...(opts.tenant?.id || opts.tenant?.label
+      ? { tenant: { id: opts.tenant.id, label: opts.tenant.label } }
+      : {}),
+    quote: opts.quote,
+    amountErg: opts.quote.price,
+    receiverAddress: opts.quote.receiverAddress,
+    reserveBoxId: opts.quote.reserveBoxId,
+    taskHash: opts.quote.taskHash,
+    expiresAt: opts.quote.expiresAt,
+    deadline: opts.quote.deadline,
+    verifyEndpoint: `${base}/api/sage/verify-payment`,
+    receiptEndpointTemplate: `${base}/api/sage/receipt/{receiptId}`,
+  }
+}
+
+export function serializeSagePaymentIntent(intent: SagePaymentIntent): string {
+  return JSON.stringify(intent, null, 2)
 }
 
 export async function streamSageChat(

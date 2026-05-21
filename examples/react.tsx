@@ -21,7 +21,15 @@ export function PaidSageCard() {
   return (
     <section style={{ padding: 24 }}>
       <h3>Paid Sage embed</h3>
-      <SagePaymentWidget tenant={{ id: "example-react", label: "Example app" }} />
+      <SagePaymentWidget
+        tenant={{ id: "example-react", label: "Example app" }}
+        paymentInstructions={{ walletLauncherLabel: "Open example wallet" }}
+        onPaymentIntent={(intent) => console.log("[sage] payment intent", intent)}
+        walletLauncher={async (intent) => {
+          console.log("Host wallet should issue a testnet Note for", intent.amountErg)
+          return { ok: true }
+        }}
+      />
     </section>
   )
 }

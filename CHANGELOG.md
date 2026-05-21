@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
+## [0.3.0] — 2026-05-21
+
+Prepared the widget for host-owned wallet integrations.
+
+### Added
+- Portable `SagePaymentIntent` contract generated from premium quotes.
+- `createSagePaymentIntent()` and `serializeSagePaymentIntent()` helpers for custom UIs and wallet adapters.
+- `onPaymentIntent` callback in React and vanilla widgets.
+- Optional `walletLauncher(intent)` callback so host apps can open their own reviewed wallet flow and prefill the returned Note box id.
+- Default widget UI for copying payment intent JSON.
+- `showPaymentIntent`, `testnetWarning`, and `paymentInstructions.walletLauncherLabel` options.
+- `paymentIntent` added to React `onStatus()` snapshots and vanilla `handle.status()`.
+
+### Changed
+- Package homepage now points to the canonical Sage Widget install page.
+- README examples now describe the v0.3 host-wallet bridge pattern.
+
 ## [0.2.0] — 2026-05-16
 
 Prepared paid Sage embed surface.

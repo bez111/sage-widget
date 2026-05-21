@@ -31,6 +31,12 @@
 
     mountSagePaymentWidget(document.getElementById("sage-chat"), {
       tenant: { id: "example-vanilla", label: "Vanilla example" },
+      paymentInstructions: { walletLauncherLabel: "Open example wallet" },
+      onPaymentIntent: (intent) => console.log("[sage] payment intent", intent),
+      walletLauncher: async (intent) => {
+        console.log("Host wallet should issue a testnet Note for", intent.amountErg)
+        return { ok: true }
+      },
     })
   </script>
 </body>

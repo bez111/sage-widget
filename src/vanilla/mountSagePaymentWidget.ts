@@ -1,12 +1,15 @@
 import {
+  createSagePaymentIntent,
   fetchSageReceipt,
   fetchSageQuote,
+  serializeSagePaymentIntent,
   streamSageChat,
   verifySagePayment,
 } from "../api"
 import {
   DEFAULT_API_BASE,
   type SageChatMessage,
+  type SagePaymentIntent,
   type SagePaymentPhase,
   type SagePaymentWidgetOptions,
   type SageQuoteResponse,
@@ -22,6 +25,7 @@ export interface MountSagePaymentWidgetHandle {
     phase: SagePaymentPhase
     tier: "free" | "premium" | null
     quote: SageQuoteResponse["quote"] | null
+    paymentIntent: SagePaymentIntent | null
     receipt: SageVerifyPaymentResponse | null
     receiptBundle: SageReceiptBundle | null
     error: string | null
@@ -42,6 +46,7 @@ export function mountSagePaymentWidget(
   let noteBoxId = ""
   let activeQuestion = ""
   let quoteResponse: SageQuoteResponse | null = null
+  let paymentIntent: SagePaymentIntent | null = null
   let receipt: SageVerifyPaymentResponse | null = null
   let receiptBundle: SageReceiptBundle | null = null
   let error: string | null = null
@@ -59,6 +64,7 @@ export function mountSagePaymentWidget(
     inputValue = ""
     noteBoxId = ""
     quoteResponse = null
+    paymentIntent = null
     receipt = null
     receiptBundle = null
     error = null
@@ -80,6 +86,13 @@ export function mountSagePaymentWidget(
       if (quote.premium) {
         if (!quote.quote) throw new Error("Sage marked this question premium but did not return a quote.")
         quoteResponse = quote
+        paymentIntent = createSagePaymentIntent({
+          apiBase,
+          tenant: opts.tenant,
+          question,
+          quote: quote.quote,
+        })
+        opts.onPaymentIntent?.(paymentIntent)
         transition("payment_required")
         render()
         return
@@ -116,6 +129,7 @@ export function mountSagePaymentWidget(
     receipt = verified
     opts.onReceipt?.(verified)
     quoteResponse = null
+    paymentIntent = null
     noteBoxId = ""
     transition("streaming")
     try {
@@ -167,6 +181,15 @@ export function mountSagePaymentWidget(
         })
         opts.onQuote?.(quote)
         quoteResponse = quote
+        paymentIntent = quote.quote
+          ? createSagePaymentIntent({
+              apiBase,
+              tenant: opts.tenant,
+              question: activeQuestion,
+              quote: quote.quote,
+            })
+          : null
+        if (paymentIntent) opts.onPaymentIntent?.(paymentIntent)
         transition("payment_required")
         render()
         return
@@ -177,6 +200,22 @@ export function mountSagePaymentWidget(
       messages = [...baseMessages, { role: "assistant", content: result.text }]
     }
     transition("idle")
+    render()
+  }
+
+  async function launchWallet() {
+    if (!paymentIntent || !opts.walletLauncher || isBusy()) return
+    error = null
+    try {
+      const result = await opts.walletLauncher(paymentIntent)
+      if (result?.ok === false) {
+        throw new Error(result.error ?? "Wallet flow did not produce a Note.")
+      }
+      if (result?.noteBoxId) noteBoxId = result.noteBoxId
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Wallet flow failed."
+      opts.onError?.(err)
+    }
     render()
   }
 
@@ -300,6 +339,48 @@ export function mountSagePaymentWidget(
       field("Task hash", quote.taskHash),
     )
 
+    const testnetWarning =
+      opts.testnetWarning === false
+        ? null
+        : opts.testnetWarning ??
+          "Testnet proof flow. The widget never signs funds; connect your own reviewed wallet layer before handling real value."
+    if (testnetWarning) {
+      const warning = document.createElement("div")
+      warning.textContent = testnetWarning
+      applyStyles(warning, warningStyle)
+      panel.appendChild(warning)
+    }
+
+    if (opts.showPaymentIntent !== false && paymentIntent) {
+      const intent = document.createElement("div")
+      applyStyles(intent, intentStyle)
+      const intentTop = document.createElement("div")
+      applyStyles(intentTop, intentHeaderStyle)
+      const label = document.createElement("strong")
+      label.textContent = "Payment intent"
+      const copy = document.createElement("button")
+      copy.type = "button"
+      copy.textContent = "Copy JSON"
+      copy.addEventListener("click", () => copyText(serializeSagePaymentIntent(paymentIntent!)))
+      applyStyles(copy, copyButtonStyle)
+      intentTop.append(label, copy)
+      const code = document.createElement("code")
+      code.textContent = serializeSagePaymentIntent(paymentIntent)
+      applyStyles(code, intentCodeStyle)
+      intent.append(intentTop, code)
+      panel.appendChild(intent)
+    }
+
+    if (opts.walletLauncher && paymentIntent) {
+      const wallet = document.createElement("button")
+      wallet.type = "button"
+      wallet.textContent = opts.paymentInstructions?.walletLauncherLabel ?? "Open wallet flow"
+      wallet.disabled = isBusy()
+      wallet.addEventListener("click", () => void launchWallet())
+      applyStyles(wallet, secondaryButtonStyle)
+      panel.appendChild(wallet)
+    }
+
     const label = document.createElement("label")
     label.textContent = opts.paymentInstructions?.noteBoxLabel ?? "Note box id"
     applyStyles(label, labelStyle)
@@ -367,6 +448,7 @@ export function mountSagePaymentWidget(
       phase: next,
       tier,
       quote: quoteResponse?.quote ?? null,
+      paymentIntent,
       receipt,
       receiptBundle,
       error,
@@ -388,6 +470,7 @@ export function mountSagePaymentWidget(
       phase,
       tier,
       quote: quoteResponse?.quote ?? null,
+      paymentIntent,
       receipt,
       receiptBundle,
       error,
@@ -592,6 +675,55 @@ const sendButtonStyle: Partial<CSSStyleDeclaration> = {
 const primaryButtonStyle: Partial<CSSStyleDeclaration> = {
   ...sendButtonStyle,
   padding: "10px 12px",
+}
+
+const secondaryButtonStyle: Partial<CSSStyleDeclaration> = {
+  border: "1px solid rgba(103,232,249,.28)",
+  background: "rgba(103,232,249,.08)",
+  color: "#cffafe",
+  borderRadius: "6px",
+  padding: "10px 12px",
+  fontWeight: "800",
+  cursor: "pointer",
+}
+
+const warningStyle: Partial<CSSStyleDeclaration> = {
+  color: "#fde68a",
+  background: "rgba(245,158,11,.1)",
+  border: "1px solid rgba(245,158,11,.24)",
+  borderRadius: "6px",
+  padding: "8px 9px",
+  fontSize: "12px",
+  lineHeight: "1.45",
+}
+
+const intentStyle: Partial<CSSStyleDeclaration> = {
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.04)",
+  borderRadius: "6px",
+  padding: "10px",
+  display: "grid",
+  gap: "8px",
+}
+
+const intentHeaderStyle: Partial<CSSStyleDeclaration> = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "8px",
+  color: "#e2e8f0",
+  fontSize: "12px",
+}
+
+const intentCodeStyle: Partial<CSSStyleDeclaration> = {
+  display: "block",
+  maxHeight: "130px",
+  overflow: "auto",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  color: "#cbd5e1",
+  fontSize: "10px",
+  lineHeight: "1.45",
 }
 
 const receiptStyle: Partial<CSSStyleDeclaration> = {

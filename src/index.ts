@@ -18,6 +18,8 @@ export {
   verifySagePayment,
   fetchSageReceipt,
   isFullSageReceiptBundle,
+  createSagePaymentIntent,
+  serializeSagePaymentIntent,
   streamSageChat,
   nanoToErg,
   relativeTime,

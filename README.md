@@ -7,12 +7,14 @@ Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockcha
 
 > _Why this matters:_ Sage settles real paid AI queries on Ergo testnet. The feed makes the "agent-economy" thesis visibly provable wherever you embed it — not a marketing claim, a list of public on-chain receipts that update live.
 
-## What v0.2 ships
+## What v0.3 ships
 
 - `<SagePaymentWidget />` React component.
 - `mountSagePaymentWidget(target, opts)` vanilla DOM mount.
 - Typed clients for quote, verify, chat stream, receipt bundle, and activity feed.
 - Tenant metadata and host-provided payment instructions.
+- Portable `SagePaymentIntent` JSON for host-owned wallet flows.
+- Optional `walletLauncher(intent)` callback so your app can open a reviewed wallet flow without letting the widget sign funds.
 - Payment lifecycle callbacks: quote, receipt, receipt bundle, tier, phase, status.
 - Public receipt links plus machine-readable `/api/sage/receipt/<id>` links.
 
@@ -56,10 +58,18 @@ export function PaidSageBox() {
       paymentInstructions={{
         helperText: "Issue the quoted Accord Note from your testnet wallet, then paste the Note box id.",
         walletUrl: "https://www.ergoblockchain.org/build/agent-payments",
+        walletLauncherLabel: "Open my testnet wallet",
       }}
       onQuote={(quote) => console.log("Sage quote", quote)}
+      onPaymentIntent={(intent) => console.log("Wallet intent", intent)}
       onReceipt={(receipt) => console.log("Sage receipt", receipt.receiptUrl)}
       onReceiptBundle={(bundle) => console.log("Receipt completeness", bundle.completeness)}
+      walletLauncher={async (intent) => {
+        // Your app owns wallet policy, ErgoPay/Fleet integration and signing.
+        // Return a Note box id when the wallet creates the testnet Note.
+        console.log("Create a Note for", intent.amountErg, intent.receiverAddress)
+        return { ok: true, noteBoxId: "" }
+      }}
     />
   )
 }
@@ -100,6 +110,7 @@ import { mountSagePaymentWidget } from "@ergoblockchain/sage-widget/vanilla"
 
 const handle = mountSagePaymentWidget(document.getElementById("sage-chat")!, {
   tenant: { id: "docs-footer", label: "Docs footer" },
+  onPaymentIntent: (intent) => console.log("[sage] payment intent", intent),
 })
 
 // You can also start a question programmatically:
@@ -139,6 +150,27 @@ if (isFullSageReceiptBundle(receipt)) {
 }
 ```
 
+### Payment intent bridge
+
+v0.3 adds a small but important contract between the widget and your wallet layer. The widget still does **not** sign transactions. Instead it emits a portable intent:
+
+```ts
+import {
+  createSagePaymentIntent,
+  serializeSagePaymentIntent,
+} from "@ergoblockchain/sage-widget"
+
+const intent = createSagePaymentIntent({
+  question: "/deep explain Ergo Notes",
+  quote,
+  tenant: { id: "my-wallet", label: "My Wallet" },
+})
+
+console.log(serializeSagePaymentIntent(intent))
+```
+
+The intent includes network, receiver, amount, reserve box, task hash, expiry, verification endpoint, and receipt endpoint template. A wallet integration can turn it into an Ergo testnet Note, then hand the Note box id back to the widget for verification.
+
 ## Render-prop / bring-your-own-design
 
 ```tsx
@@ -177,13 +209,17 @@ if (isFullSageReceiptBundle(receipt)) {
 | `onReceiptBundle`   | `(bundle) => void`                        | Fired after the widget fetches `/api/sage/receipt/<id>`.    |
 | `onTier`            | `("free" \| "premium") => void`           | Fired when the stream reports model tier.                   |
 | `onPhase`           | `(phase) => void`                         | Fired on widget phase changes: idle, quoting, payment_required, verifying, streaming, error. |
-| `onStatus`          | `(status) => void`                        | Fired with a compact snapshot of phase, tier, quote, receipt, receipt bundle, and error. |
+| `onPaymentIntent`   | `(intent) => void`                        | Fired when a premium quote becomes a structured wallet intent. |
+| `walletLauncher`    | `(intent) => Promise<{ ok; noteBoxId? }>` | Optional host-owned wallet flow. The widget never signs itself. |
+| `showPaymentIntent` | `boolean`                                 | Shows or hides the default payment-intent JSON panel. Default `true`. |
+| `testnetWarning`    | `string \| false`                         | Default testnet safety copy. Set `false` to hide. |
+| `onStatus`          | `(status) => void`                        | Fired with a compact snapshot of phase, tier, quote, payment intent, receipt, receipt bundle, and error. |
 
-`onStatus` and the vanilla `handle.status()` also include `messages` and `activeQuestion`, so hosts can mirror widget state into their own telemetry or UI.
+`onStatus` and the vanilla `handle.status()` also include `paymentIntent`, `messages`, and `activeQuestion`, so hosts can mirror widget state into their own telemetry or UI.
 
 ## Payment model
 
-v0.2 deliberately does **not** sign wallet transactions inside the widget. The widget shows the quote fields, accepts a Note box id, verifies it through Sage, then streams the answer and exposes the receipt. Hosts can pair it with their own wallet flow, Accord tooling, or a manual testnet Note issuer.
+v0.3 deliberately does **not** sign wallet transactions inside the widget. The widget shows the quote fields, emits a portable payment intent, accepts a Note box id, verifies it through Sage, then streams the answer and exposes the receipt. Hosts can pair it with their own wallet flow, Accord tooling, ErgoPay/Fleet integration, or a manual testnet Note issuer.
 
 For the canonical site, a successful paid flow looks like:
 
@@ -213,7 +249,7 @@ For settlements, use `paymentNanoErg` (the value of the consumed Note) for "amou
 
 ## Related
 
-- **Live demo**: [ergoblockchain.org/agent-economy#sage-activity](https://www.ergoblockchain.org/agent-economy#sage-activity)
+- **Live demo**: [ergoblockchain.org/agent-economy/sage-widget](https://www.ergoblockchain.org/agent-economy/sage-widget)
 - **API directly**: [`/api/sage/activity`](https://www.ergoblockchain.org/api/sage/activity) — JSON, no auth, cached 30s
 - **Receipt format**: [`/r/sage/<settlement_tx_id>`](https://www.ergoblockchain.org/r/sage/f697e4841dd9a0c689d0b83a311130b85a0cfbab123230a6c40284b44c4cafef)
 - **Accord Protocol**: [github.com/accord-protocol/accord-protocol](https://github.com/accord-protocol/accord-protocol)
@@ -232,8 +268,9 @@ npm pack --dry-run
 ## Roadmap
 
 - **v0.1.x** — read-only activity feed (React + vanilla + types).
-- **v0.2** _(current source)_ — `<SagePaymentWidget />` paid chat with quote, manual Note verify, streaming answer, receipt link, tenant config.
-- **v0.3** — generic `<AccordActivityFeed providerId="..." />` that works for any provider in the registry, not just Sage.
+- **v0.2** — `<SagePaymentWidget />` paid chat with quote, manual Note verify, streaming answer, receipt link, tenant config.
+- **v0.3** _(current source)_ — payment-intent bridge, wallet launcher callback, stronger host telemetry, clearer testnet safety copy.
+- **v0.4** — generic `<AccordActivityFeed providerId="..." />` that works for any provider in the registry, not just Sage.
 
 ## License
 

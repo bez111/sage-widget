@@ -91,6 +91,8 @@ export interface SageTenantConfig {
   headers?: Record<string, string>
 }
 
+export type SagePaymentNetwork = "ergo-testnet" | "ergo-mainnet"
+
 export interface SageQuote {
   quoteId: string
   taskHash: string
@@ -115,6 +117,36 @@ export interface SageQuoteResponse {
   rationale?: string
   quote?: SageQuote
 }
+
+export interface SagePaymentIntent {
+  type: "sage.payment_intent.v1"
+  network: SagePaymentNetwork
+  createdAt: string
+  question: string
+  tenant?: Pick<SageTenantConfig, "id" | "label">
+  quote: SageQuote
+  amountErg: string
+  receiverAddress: string
+  reserveBoxId: string
+  taskHash: string
+  expiresAt: string
+  deadline: `+${number} blocks`
+  verifyEndpoint: string
+  receiptEndpointTemplate: string
+}
+
+export interface SageWalletLaunchResult {
+  ok: boolean
+  /** Note box id produced by a host wallet flow. If present, the widget can prefill verification. */
+  noteBoxId?: string
+  /** Optional transaction id for host telemetry. Sage verifies by Note box id, not by tx id. */
+  txId?: string
+  error?: string
+}
+
+export type SageWalletLauncher = (
+  intent: SagePaymentIntent,
+) => Promise<SageWalletLaunchResult | void> | SageWalletLaunchResult | void
 
 export interface SageVerifyPaymentResponse {
   ok: true
@@ -195,10 +227,27 @@ export interface SagePaymentWidgetOptions {
   title?: string
   /** Optional host-specific payment copy and links. */
   paymentInstructions?: SagePaymentInstructions
+  /**
+   * Optional wallet launcher supplied by the host app. The package does not
+   * sign transactions itself; this callback receives a structured intent that
+   * your wallet layer can transform into a testnet Note.
+   */
+  walletLauncher?: SageWalletLauncher
+  /**
+   * Show the portable payment intent JSON in the default UI. Default: true.
+   * Hosts with a fully custom wallet flow can set this to false.
+   */
+  showPaymentIntent?: boolean
+  /**
+   * Testnet safety copy for the default widget. Set to false to hide.
+   */
+  testnetWarning?: string | false
   /** Called whenever a message is appended by the widget. */
   onMessage?: (message: SageChatMessage, messages: SageChatMessage[]) => void
   /** Called after Sage returns a premium quote. */
   onQuote?: (quote: SageQuoteResponse) => void
+  /** Called when a structured payment intent is produced for the active quote. */
+  onPaymentIntent?: (intent: SagePaymentIntent) => void
   /** Called after a payment verifies and Sage returns a receipt link. */
   onReceipt?: (receipt: SageVerifyPaymentResponse) => void
   /** Called after the widget fetches the full machine-readable receipt bundle. */
@@ -226,6 +275,8 @@ export interface SagePaymentInstructions {
   helperText?: string
   /** Optional link to host payment/wallet instructions. */
   walletUrl?: string
+  /** Custom label for the wallet launcher button. */
+  walletLauncherLabel?: string
   /** Optional custom label for the Note box input. */
   noteBoxLabel?: string
 }
@@ -234,6 +285,7 @@ export interface SagePaymentWidgetStatus {
   phase: SagePaymentPhase
   tier: SageChatTier | null
   quote: SageQuoteResponse["quote"] | null
+  paymentIntent: SagePaymentIntent | null
   receipt: SageVerifyPaymentResponse | null
   receiptBundle: SageReceiptBundle | null
   error: string | null

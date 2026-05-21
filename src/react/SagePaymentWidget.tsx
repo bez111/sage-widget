@@ -7,14 +7,17 @@ import {
   type FormEvent,
 } from "react"
 import {
+  createSagePaymentIntent,
   fetchSageReceipt,
   fetchSageQuote,
+  serializeSagePaymentIntent,
   streamSageChat,
   verifySagePayment,
 } from "../api"
 import {
   DEFAULT_API_BASE,
   type SageChatMessage,
+  type SagePaymentIntent,
   type SagePaymentPhase,
   type SagePaymentWidgetOptions,
   type SageQuoteResponse,
@@ -35,6 +38,8 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     initialMessages = [],
     placeholder = "Ask Sage about Ergo or agent payments...",
     paymentInstructions,
+    showPaymentIntent = true,
+    testnetWarning = "Testnet proof flow. The widget never signs funds; connect your own reviewed wallet layer before handling real value.",
     className,
     style,
     title = "Ask Sage",
@@ -44,6 +49,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
   const [input, setInput] = useState("")
   const [phase, setPhase] = useState<SagePaymentPhase>("idle")
   const [quoteResponse, setQuoteResponse] = useState<SageQuoteResponse | null>(null)
+  const [paymentIntent, setPaymentIntent] = useState<SagePaymentIntent | null>(null)
   const [activeQuestion, setActiveQuestion] = useState("")
   const [noteBoxId, setNoteBoxId] = useState("")
   const [receipt, setReceipt] = useState<SageVerifyPaymentResponse | null>(null)
@@ -76,6 +82,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     setReceipt(null)
     setReceiptBundle(null)
     setQuoteResponse(null)
+    setPaymentIntent(null)
     setActiveQuestion(question)
     setNoteBoxId("")
     setTier(null)
@@ -90,8 +97,15 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       props.onQuote?.(quote)
       if (quote.premium) {
         if (!quote.quote) throw new Error("Sage marked this question premium but did not return a quote.")
+        const intent = createSagePaymentIntent({
+          ...apiOpts,
+          question,
+          quote: quote.quote,
+        })
+        setPaymentIntent(intent)
         setQuoteResponse(quote)
-        transition("payment_required", { quote: quote.quote })
+        props.onPaymentIntent?.(intent)
+        transition("payment_required", { quote: quote.quote, paymentIntent: intent })
         return
       }
       await streamAnswer(nextMessages, undefined, question)
@@ -124,14 +138,15 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     setReceipt(verified)
     props.onReceipt?.(verified)
     setQuoteResponse(null)
+    setPaymentIntent(null)
     setNoteBoxId("")
-    transition("streaming", { quote: null, receipt: verified })
+    transition("streaming", { quote: null, paymentIntent: null, receipt: verified })
     try {
       const bundle = await fetchSageReceipt(verified.receiptId, apiOpts)
       if (!mountedRef.current) return
       setReceiptBundle(bundle)
       props.onReceiptBundle?.(bundle)
-      emitStatus("streaming", { quote: null, receipt: verified, receiptBundle: bundle })
+      emitStatus("streaming", { quote: null, paymentIntent: null, receipt: verified, receiptBundle: bundle })
     } catch (bundleErr) {
       props.onError?.(bundleErr)
     }
@@ -182,7 +197,12 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
         props.onQuote?.(quote)
         setQuoteResponse(quote)
         setActiveQuestion(question)
-        transition("payment_required", { quote: quote.quote ?? null })
+        const intent = quote.quote
+          ? createSagePaymentIntent({ ...apiOpts, question, quote: quote.quote })
+          : null
+        setPaymentIntent(intent)
+        if (intent) props.onPaymentIntent?.(intent)
+        transition("payment_required", { quote: quote.quote ?? null, paymentIntent: intent })
         return
       }
       throw new Error(result.error ?? "Sage chat failed.")
@@ -207,6 +227,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     next: SagePaymentPhase,
     overrides: Partial<{
       quote: SageQuoteResponse["quote"] | null
+      paymentIntent: SagePaymentIntent | null
       receipt: SageVerifyPaymentResponse | null
       receiptBundle: SageReceiptBundle | null
       error: string | null
@@ -224,6 +245,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
     nextPhase: SagePaymentPhase,
     overrides: Partial<{
       quote: SageQuoteResponse["quote"] | null
+      paymentIntent: SagePaymentIntent | null
       receipt: SageVerifyPaymentResponse | null
       receiptBundle: SageReceiptBundle | null
       error: string | null
@@ -238,6 +260,7 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
       phase: nextPhase,
       tier: has("tier") ? overrides.tier ?? null : tier,
       quote: has("quote") ? overrides.quote ?? null : quoteResponse?.quote ?? null,
+      paymentIntent: has("paymentIntent") ? overrides.paymentIntent ?? null : paymentIntent,
       receipt: has("receipt") ? overrides.receipt ?? null : receipt,
       receiptBundle: has("receiptBundle") ? overrides.receiptBundle ?? null : receiptBundle,
       error: has("error") ? overrides.error ?? null : error,
@@ -248,6 +271,25 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
 
   const quote = quoteResponse?.quote
   const showPaymentPanel = quote && !receipt
+
+  async function copyPaymentIntent() {
+    if (!paymentIntent) return
+    await copyText(serializeSagePaymentIntent(paymentIntent))
+  }
+
+  async function launchWallet() {
+    if (!paymentIntent || !props.walletLauncher || busy) return
+    setError(null)
+    try {
+      const result = await props.walletLauncher(paymentIntent)
+      if (result?.ok === false) {
+        throw new Error(result.error ?? "Wallet flow did not produce a Note.")
+      }
+      if (result?.noteBoxId) setNoteBoxId(result.noteBoxId)
+    } catch (err) {
+      fail(err, false)
+    }
+  }
 
   return (
     <section className={className} style={{ ...rootStyle, ...style }}>
@@ -296,6 +338,28 @@ export function SagePaymentWidget(props: SagePaymentWidgetProps): JSX.Element {
           <Field label="Receiver" value={quote.receiverAddress} copy />
           <Field label="Reserve box" value={quote.reserveBoxId} copy />
           <Field label="Task hash" value={quote.taskHash} copy />
+          {testnetWarning ? <div style={warningStyle}>{testnetWarning}</div> : null}
+          {showPaymentIntent && paymentIntent ? (
+            <div style={intentStyle}>
+              <div style={intentHeaderStyle}>
+                <strong>Payment intent</strong>
+                <button type="button" style={copyButtonStyle} onClick={copyPaymentIntent}>
+                  Copy JSON
+                </button>
+              </div>
+              <code style={intentCodeStyle}>{serializeSagePaymentIntent(paymentIntent)}</code>
+            </div>
+          ) : null}
+          {props.walletLauncher && paymentIntent ? (
+            <button
+              type="button"
+              onClick={launchWallet}
+              disabled={busy}
+              style={secondaryButtonStyle}
+            >
+              {paymentInstructions?.walletLauncherLabel ?? "Open wallet flow"}
+            </button>
+          ) : null}
           <label style={labelStyle}>
             {paymentInstructions?.noteBoxLabel ?? "Note box id"}
             <input
@@ -361,9 +425,9 @@ function Field({ label, value, copy = false }: { label: string; value: string; c
   )
 }
 
-function copyText(value: string) {
+async function copyText(value: string): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.clipboard) {
-    void navigator.clipboard.writeText(value)
+    await navigator.clipboard.writeText(value)
   }
 }
 
@@ -560,6 +624,55 @@ const sendButtonStyle: CSSProperties = {
 const primaryButtonStyle: CSSProperties = {
   ...sendButtonStyle,
   padding: "10px 12px",
+}
+
+const secondaryButtonStyle: CSSProperties = {
+  border: "1px solid rgba(103,232,249,.28)",
+  background: "rgba(103,232,249,.08)",
+  color: "#cffafe",
+  borderRadius: 6,
+  padding: "10px 12px",
+  fontWeight: 800,
+  cursor: "pointer",
+}
+
+const warningStyle: CSSProperties = {
+  color: "#fde68a",
+  background: "rgba(245,158,11,.1)",
+  border: "1px solid rgba(245,158,11,.24)",
+  borderRadius: 6,
+  padding: "8px 9px",
+  fontSize: 12,
+  lineHeight: 1.45,
+}
+
+const intentStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.04)",
+  borderRadius: 6,
+  padding: 10,
+  display: "grid",
+  gap: 8,
+}
+
+const intentHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 8,
+  color: "#e2e8f0",
+  fontSize: 12,
+}
+
+const intentCodeStyle: CSSProperties = {
+  display: "block",
+  maxHeight: 130,
+  overflow: "auto",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  color: "#cbd5e1",
+  fontSize: 10,
+  lineHeight: 1.45,
 }
 
 const receiptStyle: CSSProperties = {

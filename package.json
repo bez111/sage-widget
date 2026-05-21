@@ -1,7 +1,7 @@
 {
   "name": "@ergoblockchain/sage-widget",
-  "version": "0.2.0",
-  "description": "Embeddable Sage widgets for live activity and paid Accord Note chat on ergoblockchain.org. React components + vanilla DOM mounts + typed API clients.",
+  "version": "0.3.0",
+  "description": "Embeddable Sage widgets for live activity and paid Accord Note chat on ergoblockchain.org. React, vanilla, typed API clients, and portable payment intents.",
   "keywords": [
     "ergo",
     "ergoblockchain",
@@ -12,7 +12,7 @@
     "blockchain-widget",
     "react"
   ],
-  "homepage": "https://www.ergoblockchain.org/agent-economy#sage-activity",
+  "homepage": "https://www.ergoblockchain.org/agent-economy/sage-widget",
   "repository": {
     "type": "git",
     "url": "https://github.com/bez111/sage-widget.git"
