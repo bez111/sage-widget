@@ -15,7 +15,7 @@
   "homepage": "https://www.ergoblockchain.org/agent-economy/sage-widget",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bez111/sage-widget.git"
+    "url": "git+https://github.com/bez111/sage-widget.git"
   },
   "bugs": {
     "url": "https://github.com/bez111/sage-widget/issues"
