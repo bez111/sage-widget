@@ -13,6 +13,17 @@
 
 export * from "./types"
 export {
+  SAGE_WIDGET_CAPABILITIES,
+  createHostedFeedSnippet,
+  createReactEmbedSnippet,
+  createSageWidgetEmbedConfig,
+  createVanillaEmbedSnippet,
+  type CreateSageWidgetEmbedConfigOptions,
+  type SageWidgetCapabilityManifest,
+  type SageWidgetEmbedConfig,
+  type SageWidgetEmbedMode,
+} from "./embed"
+export {
   fetchSageActivity,
   fetchSageQuote,
   verifySagePayment,

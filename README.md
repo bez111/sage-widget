@@ -7,7 +7,7 @@ Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockcha
 
 > _Why this matters:_ Sage settles real paid AI queries on Ergo testnet. The feed makes the "agent-economy" thesis visibly provable wherever you embed it — not a marketing claim, a list of public on-chain receipts that update live.
 
-## What v0.3 ships
+## What v0.4 ships
 
 - `<SagePaymentWidget />` React component.
 - `mountSagePaymentWidget(target, opts)` vanilla DOM mount.
@@ -17,6 +17,8 @@ Embeddable widgets for **Sage** — the agent-economy concierge on [ergoblockcha
 - Optional `walletLauncher(intent)` callback so your app can open a reviewed wallet flow without letting the widget sign funds.
 - Payment lifecycle callbacks: quote, receipt, receipt bundle, tier, phase, status.
 - Public receipt links plus machine-readable `/api/sage/receipt/<id>` links.
+- `SAGE_WIDGET_CAPABILITIES` for agent/tool discovery.
+- Embed helpers for generated docs and host onboarding: `createSageWidgetEmbedConfig`, `createReactEmbedSnippet`, `createVanillaEmbedSnippet`, and `createHostedFeedSnippet`.
 
 The canonical Sage host is **testnet live proof**. It can produce `full_receipt_bundle` receipts with Agreement JSON, Verification Receipt JSON, and Settlement Receipt JSON. Mainnet readiness remains audit-gated.
 
@@ -152,7 +154,7 @@ if (isFullSageReceiptBundle(receipt)) {
 
 ### Payment intent bridge
 
-v0.3 adds a small but important contract between the widget and your wallet layer. The widget still does **not** sign transactions. Instead it emits a portable intent:
+v0.3 added a small but important contract between the widget and your wallet layer. The widget still does **not** sign transactions. Instead it emits a portable intent:
 
 ```ts
 import {
@@ -170,6 +172,33 @@ console.log(serializeSagePaymentIntent(intent))
 ```
 
 The intent includes network, receiver, amount, reserve box, task hash, expiry, verification endpoint, and receipt endpoint template. A wallet integration can turn it into an Ergo testnet Note, then hand the Note box id back to the widget for verification.
+
+### Embed kit
+
+v0.4 adds a tiny host-onboarding layer for generated docs, admin panels, and setup wizards:
+
+```ts
+import {
+  SAGE_WIDGET_CAPABILITIES,
+  createReactEmbedSnippet,
+  createSageWidgetEmbedConfig,
+  createVanillaEmbedSnippet,
+} from "@ergoblockchain/sage-widget"
+
+const config = createSageWidgetEmbedConfig({
+  mode: "payment-widget",
+  tenant: { id: "my-wallet", label: "My Wallet" },
+  paymentInstructions: {
+    walletUrl: "https://my-wallet.example/sage-testnet-note",
+  },
+})
+
+console.log(SAGE_WIDGET_CAPABILITIES.mainnetReady) // false
+console.log(createReactEmbedSnippet(config))
+console.log(createVanillaEmbedSnippet(config))
+```
+
+The generated snippets keep the same boundary as the package itself: Sage can quote, verify, stream, and expose receipts, but the host application owns wallet policy, signing, limits, and custody.
 
 ## Render-prop / bring-your-own-design
 

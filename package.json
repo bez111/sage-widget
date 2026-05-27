@@ -1,7 +1,7 @@
 {
   "name": "@ergoblockchain/sage-widget",
-  "version": "0.3.0",
-  "description": "Embeddable Sage widgets for live activity and paid Accord Note chat on ergoblockchain.org. React, vanilla, typed API clients, and portable payment intents.",
+  "version": "0.4.0",
+  "description": "Embeddable Sage widgets for live activity and paid Accord Note chat on ergoblockchain.org. React, vanilla, typed API clients, portable payment intents, and embed snippets.",
   "keywords": [
     "ergo",
     "ergoblockchain",

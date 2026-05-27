@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
+## [0.4.0] — 2026-05-27
+
+Prepared the widget for copy-paste host embeds.
+
+### Added
+- `SAGE_WIDGET_CAPABILITIES` manifest describing the widget's live, host-required, and audit-gated surfaces.
+- `createSageWidgetEmbedConfig()` for normalized activity-feed and paid-widget embed configuration.
+- `createReactEmbedSnippet()` and `createVanillaEmbedSnippet()` for documentation, host onboarding, and generated install pages.
+- `createHostedFeedSnippet()` for the canonical hosted read-only feed drop-in.
+- Root exports for the embed config/snippet types.
+
+### Changed
+- Package description now includes embed snippets.
+
 ## [0.3.0] — 2026-05-21
 
 Prepared the widget for host-owned wallet integrations.
